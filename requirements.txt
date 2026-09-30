@@ -1,0 +1,4 @@
+python-telegram-bot==21.7
+python-dotenv==1.0.0
+jsonschema==4.20.0
+pdfplumber==0.11.4

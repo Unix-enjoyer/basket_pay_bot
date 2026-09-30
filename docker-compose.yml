@@ -1,0 +1,12 @@
+services:
+  bot:
+    build: .
+    container_name: basket_pay_bot
+    restart: unless-stopped   # если бот упадёт — Docker сам перезапустит его
+    env_file:
+      - .env
+    volumes:
+      # Данные (база SQLite) и логи хранятся ВНЕ контейнера, на диске сервера.
+      # Так при пересборке или обновлении образа они не потеряются.
+      - ./data:/app/data
+      - ./logs:/app/logs

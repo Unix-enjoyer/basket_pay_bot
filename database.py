@@ -5,11 +5,11 @@
 данных. Все остальные файлы вызывают функции отсюда и никогда не пишут SQL сами.
 
 Таблицы:
-  payments            — оплаты по чекам (один чек = один взрослый + его дети)
+  payments            — оплаты по чекам (один чек = один билет)
   guests              — выданные коды входа (= "билеты"), включая добавленных вручную
   admins              — список администраторов
   price_history       — история изменений цены
-  pending_purchases   — незавершённые покупки обычных пользователей (ждём ответ на вопрос про детей / чек / телефон)
+  pending_purchases   — незавершённые покупки обычных пользователей (ждём чек / телефон)
   admin_pending_actions — незавершённые диалоги с админами (ждём новую цену / тег гостя / код для удаления и т.д.)
 
 Два "pending"-состояния специально хранятся в базе, а не в памяти процесса —
@@ -56,7 +56,6 @@ def init_db() -> None:
                 amount          INTEGER NOT NULL,
                 sender_user_id  INTEGER NOT NULL,
                 sender_tag      TEXT,
-                kids_count      INTEGER NOT NULL DEFAULT 0,
                 price_used      INTEGER NOT NULL,
                 status          TEXT NOT NULL DEFAULT 'pending',
                 created_at      TEXT NOT NULL
@@ -67,7 +66,6 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS guests (
                 code            TEXT PRIMARY KEY,
                 tag_or_phone    TEXT NOT NULL,
-                kids_count      INTEGER NOT NULL DEFAULT 0,
                 user_id         INTEGER,
                 payment_id      INTEGER,
                 added_by_admin  INTEGER,
@@ -101,7 +99,6 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS pending_purchases (
                 user_id         INTEGER PRIMARY KEY,
                 stage           TEXT NOT NULL,
-                kids_count      INTEGER NOT NULL DEFAULT 0,
                 price_locked    INTEGER,
                 payment_id      INTEGER,
                 created_at      TEXT NOT NULL
@@ -182,7 +179,6 @@ def add_payment(
     amount: int,
     sender_user_id: int,
     sender_tag: Optional[str],
-    kids_count: int,
     price_used: int,
 ) -> Optional[int]:
     """Записывает оплату со статусом 'pending'. Возвращает id, либо None при дубле квитанции."""
@@ -190,9 +186,9 @@ def add_payment(
         with get_connection() as conn:
             cursor = conn.execute(
                 """INSERT INTO payments
-                   (receipt_number, amount, sender_user_id, sender_tag, kids_count, price_used, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)""",
-                (receipt_number, amount, sender_user_id, sender_tag, kids_count, price_used, datetime.now().isoformat()),
+                   (receipt_number, amount, sender_user_id, sender_tag, price_used, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, 'pending', ?)""",
+                (receipt_number, amount, sender_user_id, sender_tag, price_used, datetime.now().isoformat()),
             )
             return cursor.lastrowid
     except sqlite3.IntegrityError:
@@ -216,20 +212,18 @@ def get_pending_payments() -> list:
 def set_pending_purchase(
     user_id: int,
     stage: str,
-    kids_count: int = 0,
     price_locked: Optional[int] = None,
     payment_id: Optional[int] = None,
 ) -> None:
     with get_connection() as conn:
         conn.execute(
-            """INSERT INTO pending_purchases (user_id, stage, kids_count, price_locked, payment_id, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)
+            """INSERT INTO pending_purchases (user_id, stage, price_locked, payment_id, created_at)
+               VALUES (?, ?, ?, ?, ?)
                ON CONFLICT(user_id) DO UPDATE SET
                    stage = excluded.stage,
-                   kids_count = excluded.kids_count,
                    price_locked = excluded.price_locked,
                    payment_id = excluded.payment_id""",
-            (user_id, stage, kids_count, price_locked, payment_id, datetime.now().isoformat()),
+            (user_id, stage, price_locked, payment_id, datetime.now().isoformat()),
         )
 
 
@@ -279,7 +273,6 @@ def code_exists(code: str) -> bool:
 def add_guest(
     code: str,
     tag_or_phone: str,
-    kids_count: int = 0,
     user_id: Optional[int] = None,
     payment_id: Optional[int] = None,
     added_by_admin: Optional[int] = None,
@@ -287,9 +280,9 @@ def add_guest(
 ) -> None:
     with get_connection() as conn:
         conn.execute(
-            """INSERT INTO guests (code, tag_or_phone, kids_count, user_id, payment_id, added_by_admin, comment, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (code, tag_or_phone, kids_count, user_id, payment_id, added_by_admin, comment, datetime.now().isoformat()),
+            """INSERT INTO guests (code, tag_or_phone, user_id, payment_id, added_by_admin, comment, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (code, tag_or_phone, user_id, payment_id, added_by_admin, comment, datetime.now().isoformat()),
         )
     logger.info(f"Выдан код {code} для {tag_or_phone}")
 
@@ -306,6 +299,17 @@ def remove_guest(code: str) -> bool:
 def get_all_guests() -> list:
     with get_connection() as conn:
         return conn.execute("SELECT * FROM guests ORDER BY created_at").fetchall()
+
+
+def get_guests_with_user_id() -> list:
+    """
+    Гости, которым можно написать напрямую в Telegram (их user_id известен,
+    потому что они сами оплачивали билет через бота).
+    Гости, добавленные вручную админом по тегу/телефону, сюда не попадают —
+    бот не знает их Telegram-аккаунт и физически не может им написать.
+    """
+    with get_connection() as conn:
+        return conn.execute("SELECT * FROM guests WHERE user_id IS NOT NULL").fetchall()
 
 
 # ==================== ВХОД НА ТУРНИР (чек-ин) ====================
@@ -360,7 +364,7 @@ def cancel_checkin(code: str) -> None:
 
 def get_attendance_stats() -> dict:
     """
-    total              — всего выдано билетов (дети отдельно не считаются — у них нет своего кода)
+    total              — всего выдано билетов
     checked_in_count   — сколько уже отмечено на входе
     not_checked_in     — теги/телефоны тех, кто ещё не пришёл
     price_breakdown    — {цена: число оплативших по этой цене} (только по чекам)

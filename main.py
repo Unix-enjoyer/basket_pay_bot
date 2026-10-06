@@ -20,7 +20,7 @@ from logger_setup import logger
 from handlers.start import start_command
 from handlers.buyer import handle_receipt
 from handlers.router import handle_text
-from handlers.admin import add_admin_command, remove_admin_command, help_command
+from handlers.admin import add_admin_command, remove_admin_command, help_command, myid_command
 
 
 async def notify_pending_payments(app: Application) -> None:
@@ -69,6 +69,7 @@ def main() -> None:
     app.add_handler(CommandHandler("help", help_command))
     # Назначение/снятие админа обязательно идёт через reply на пересланное сообщение,
     # поэтому это остаётся командой, а не кнопкой
+    app.add_handler(CommandHandler("myid", myid_command))
     app.add_handler(CommandHandler("add_admin", add_admin_command))
     app.add_handler(CommandHandler("remove_admin", remove_admin_command))
 

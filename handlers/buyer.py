@@ -1,16 +1,15 @@
 """
-Сценарий покупки билета обычным пользователем.
+Сценарий регистрации (оформления билета) обычным пользователем.
 
 Шаги (каждый — отдельная функция ниже):
-  1. start_purchase       — нажата кнопка «Купить билет себе»
-  2. handle_kids_answer   — пользователь ответил, сколько с ним детей
-  3. handle_receipt       — пользователь прислал PDF-чек
-  4. handle_phone_answer  — (только если нет username) пользователь прислал номер телефона
+  1. start_purchase       — нажата кнопка «Зарегистрироваться»: бот фиксирует
+                            текущую цену и просит перевести деньги и прислать чек
+  2. handle_receipt       — пользователь прислал PDF-чек
+  3. handle_phone_answer  — (только если нет username) пользователь прислал номер телефона
 
 Между шагами состояние хранится в таблице pending_purchases (см. database.py) —
 если бот перезапустится посреди диалога, пользователь просто продолжит с того
-же места после следующего сообщения (кроме разве что самого первого шага,
-который попросят повторить нажатием кнопки — это не страшно).
+же места после следующего сообщения.
 """
 
 import os
@@ -36,13 +35,14 @@ from receipt_parser import extract_text_from_pdf, parse_receipt_text, ReceiptPar
 from logger_setup import logger
 
 
-ERROR_NOT_PDF = "Пожалуйста, пришли именно файл чека (PDF), а не скриншот или фото."
-ERROR_UNKNOWN = "Не удалось обработать чек. Обратитесь к организаторам."
-ERROR_STATUS = "В чеке указан неуспешный статус перевода. Проверь, прошла ли оплата."
-ERROR_RECEIVER = "Номер счёта получателя в чеке не совпадает с нашим. Проверь, на тот ли счёт ты перевёл деньги."
-ERROR_DUPLICATE = "Этот чек уже был обработан ранее."
-ERROR_AMOUNT = "Проблема с суммой оплаты, обратитесь к организаторам."
-ERROR_NOT_GROUP_MEMBER = "Эта функция доступна только участникам нашей группы."
+# Тексты ошибок — собраны в одном месте, чтобы легко было поменять формулировку
+ERROR_NOT_PDF = "Пришли чек файлом в формате PDF. Скриншот или фото не подойдут."
+ERROR_UNKNOWN = "Не удалось обработать чек. Свяжись с организаторами, чтобы проверить оплату."
+ERROR_STATUS = "В чеке перевод не отмечен как успешный. Проверь статус оплаты."
+ERROR_RECEIVER = "Номер счёта получателя в чеке не совпадает с указанным для оплаты билета. Проверь реквизиты перевода."
+ERROR_DUPLICATE = "Этот чек уже был обработан. Повторно использовать его для оформления билета нельзя."
+ERROR_AMOUNT = "Сумма в чеке меньше стоимости билета. Свяжись с организаторами, чтобы уточнить дальнейшие действия."
+ERROR_NOT_GROUP_MEMBER = "Регистрация через бота доступна только участникам нашей группы."
 
 # Номер телефона в формате +7 123 456 78 90 (пробелы не обязательны)
 PHONE_RE = re.compile(r"^\+7\s*\d{3}\s*\d{3}\s*\d{2}\s*\d{2}$")
@@ -59,7 +59,7 @@ async def is_group_member(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> b
 
 
 async def start_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Нажата кнопка «Купить билет себе»."""
+    """Нажата кнопка «Зарегистрироваться»."""
     user = update.effective_user
 
     if not await is_group_member(context, user.id):
@@ -67,47 +67,31 @@ async def start_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     existing = get_pending_purchase(user.id)
-    if existing is not None:
-        # У пользователя уже есть незавершённая покупка — напоминаем, на чём остановились,
+
+    # Старая версия бота спрашивала про детей и сохраняла этап "awaiting_kids".
+    # Если у кого-то осталась такая незавершённая регистрация — просто начинаем её заново
+    # (ниже), как будто её и не было.
+    if existing is not None and existing["stage"] != "awaiting_kids":
+        # У пользователя уже есть незавершённая регистрация — напоминаем, на чём остановились,
         # вместо того чтобы начинать всё заново и "терять" его место в процессе.
-        if existing["stage"] == "awaiting_kids":
+        if existing["stage"] == "awaiting_receipt":
             await update.message.reply_text(
-                "С тобой будут дети до 10 лет? Если да — укажи число, если нет — напиши 0"
-            )
-        elif existing["stage"] == "awaiting_receipt":
-            await update.message.reply_text(
-                f"Жду от тебя чек в формате PDF на сумму {existing['price_locked']} ₽."
+                f"Ожидаю чек об оплате на сумму {existing['price_locked']} ₽. Пришли его файлом в формате PDF."
             )
         elif existing["stage"] == "awaiting_phone":
             await update.message.reply_text(
-                "Укажи свой номер телефона, пожалуйста, в формате +7 123 456 78 90"
+                "Для завершения оформления билета пришли номер телефона в формате +7 123 456 78 90."
             )
         return
 
-    set_pending_purchase(user.id, stage="awaiting_kids")
-    await update.message.reply_text(
-        "С тобой будут дети до 10 лет? Если да — укажи число, если нет — напиши 0"
-    )
-
-
-async def handle_kids_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, pending) -> None:
-    """Обрабатывает ответ на вопрос про детей (вызывается из router.py)."""
-    text = update.message.text.strip()
-
-    if not text.isdigit():
-        await update.message.reply_text(
-            "Нужно просто число — например 0, если детей нет, или 2, если их двое."
-        )
-        return
-
-    kids_count = int(text)
+    # Фиксируем цену в момент начала регистрации: если админ поменяет цену, пока человек
+    # переводит деньги, сверяться будем с той суммой, которую бот ему назвал.
     price = get_current_price()
-
-    set_pending_purchase(update.effective_user.id, stage="awaiting_receipt", kids_count=kids_count, price_locked=price)
+    set_pending_purchase(user.id, stage="awaiting_receipt", price_locked=price)
 
     await update.message.reply_text(
-        f"Хорошо, записал. Пожалуйста, переведи {price} ₽ по этому счёту:\n{ACCOUNT_LINK}\n\n"
-        f"И пришли чек в формате PDF (фотография не подойдёт)."
+        f"Переведи {price} ₽ по следующим реквизитам: {ACCOUNT_LINK}. "
+        f"Затем пришли чек файлом в формате PDF. Фото или скриншот не подойдут."
     )
 
 
@@ -119,7 +103,7 @@ async def handle_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     pending = get_pending_purchase(user.id)
     if pending is None or pending["stage"] != "awaiting_receipt":
         await update.message.reply_text(
-            "Сначала нажми «🎟 Купить билет себе», чтобы начать покупку."
+            "Чтобы начать регистрацию, сначала нажми кнопку «🎟 Зарегистрироваться»."
         )
         return
 
@@ -171,7 +155,6 @@ async def handle_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         amount=parsed.amount,
         sender_user_id=user.id,
         sender_tag=user.username,
-        kids_count=pending["kids_count"],
         price_used=pending["price_locked"],
     )
 
@@ -182,7 +165,7 @@ async def handle_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if user.username:
         await _finalize_ticket(
             update, user_id=user.id, payment_id=payment_id,
-            tag_or_phone=f"@{user.username}", kids_count=pending["kids_count"],
+            tag_or_phone=f"@{user.username}",
         )
         clear_pending_purchase(user.id)
     else:
@@ -190,10 +173,11 @@ async def handle_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # код выдадим сразу после того, как получим номер.
         set_pending_purchase(
             user.id, stage="awaiting_phone",
-            kids_count=pending["kids_count"], price_locked=pending["price_locked"], payment_id=payment_id,
+            price_locked=pending["price_locked"], payment_id=payment_id,
         )
         await update.message.reply_text(
-            "К сожалению, не получил твой тег, укажи свой номер телефона в формате +7 123 456 78 90"
+            "Чек принят. У тебя не указан username в Telegram, поэтому для оформления билета нужен номер телефона. "
+            "Пришли его в формате +7 123 456 78 90."
         )
 
 
@@ -203,7 +187,7 @@ async def handle_phone_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if not PHONE_RE.fullmatch(text):
         await update.message.reply_text(
-            "Не получилось распознать номер. Пришли его в формате +7 123 456 78 90"
+            "Не удалось распознать номер телефона. Пришли его в формате +7 123 456 78 90."
         )
         return
 
@@ -212,28 +196,27 @@ async def handle_phone_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await _finalize_ticket(
         update, user_id=update.effective_user.id, payment_id=pending["payment_id"],
-        tag_or_phone=phone, kids_count=pending["kids_count"],
+        tag_or_phone=phone,
     )
     clear_pending_purchase(update.effective_user.id)
 
 
-async def _finalize_ticket(update: Update, user_id: int, payment_id: int, tag_or_phone: str, kids_count: int) -> None:
+async def _finalize_ticket(update: Update, user_id: int, payment_id: int, tag_or_phone: str) -> None:
     """Общая часть для двух сценариев (с username и с телефоном) — генерирует код и отвечает."""
     try:
         code = generate_code()
-        add_guest(code=code, tag_or_phone=tag_or_phone, kids_count=kids_count, user_id=user_id, payment_id=payment_id)
+        add_guest(code=code, tag_or_phone=tag_or_phone, user_id=user_id, payment_id=payment_id)
         mark_payment_sent(payment_id)
     except Exception as e:
         logger.error(f"Ошибка при выдаче кода для payment_id={payment_id}: {e}")
         await update.message.reply_text(
-            "Оплата принята, но при выдаче кода произошла ошибка. "
-            "Обратитесь к организаторам — код будет выдан вручную."
+            "Оплата принята, но не удалось выдать код входа. Свяжись с организаторами — они выдадут код вручную."
         )
         return
 
-    text = f"Вижу, ты уже оплатил билет! Вот твой номерок для входа, его нужно назвать на входе:\n\n{code} - {tag_or_phone}"
-    if kids_count > 0:
-        text += f" ({kids_count} дет.)"
-
-    await update.message.reply_text(text)
-    logger.info(f"Код {code} выдан для payment_id={payment_id} ({tag_or_phone}, детей: {kids_count})")
+    await update.message.reply_text(
+        f"Твой билет на Баскет Фест оформлен! Назови этот код на входе: {code}. "
+        f"Данные билета: {tag_or_phone}.\n\n"
+        f"Ждём тебя на нашем Баскет Фесте 26 декабря! 🏀"
+    )
+    logger.info(f"Код {code} выдан для payment_id={payment_id} ({tag_or_phone})")

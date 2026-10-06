@@ -10,8 +10,12 @@
 
 from telegram import ReplyKeyboardMarkup
 
-# --- Кнопка покупателя ---
-BTN_BUY_TICKET = "🎟 Купить билет себе"
+# --- Кнопка участника ---
+BTN_BUY_TICKET = "🎟 Зарегистрироваться"
+
+# Прежний текст этой кнопки. У людей, которые уже открывали бота, на телефоне может
+# остаться старая клавиатура — бот продолжает понимать и её, пока они не нажмут /start.
+LEGACY_BUY_TICKET_TEXTS = {"🎟 Купить билет себе"}
 
 # --- Кнопки администратора ---
 BTN_SET_PRICE = "💰 Изменить цену"
@@ -23,6 +27,7 @@ BTN_REMOVE_ADMIN = "🚫 Удалить админа"
 BTN_ENTRY_INFO = "🚪 Вход"
 BTN_STATS = "📊 Статистика по приходу"
 BTN_CANCEL_LAST_CHECKIN = "↩️ Отменить последний вход"
+BTN_BROADCAST = "📢 Уведомление"
 BTN_HELP = "ℹ️ Список команд"
 
 # --- Кнопки да/нет (используются в диалоге добавления гостя) ---
@@ -38,21 +43,21 @@ ADMIN_HELP_TEXT = (
     f"{BTN_ADD_ADMIN} / {BTN_REMOVE_ADMIN} — назначить/снять админа (перешли сообщение человека + reply командой)\n"
     f"{BTN_ENTRY_INFO} — как проверять гостей на входе\n"
     f"{BTN_STATS} — итоговая статистика по приходу\n"
-    f"{BTN_CANCEL_LAST_CHECKIN} — отменить свой последний отмеченный вход (если ошиблись)\n\n"
+    f"{BTN_CANCEL_LAST_CHECKIN} — отменить свой последний отмеченный вход (если ошиблись)\n"
+    f"{BTN_BROADCAST} — разослать сообщение всем, кто оплатил билет (с напоминанием кода каждому)\n\n"
     "Коды гостей на входе можно присылать в любой момент — просто напиши код "
     "(например ABC123), бот сам распознает его и проверит."
 )
 
 ENTRY_INFO_TEXT = (
-    "Чтобы пропустить гостя на входе — просто пришли сюда его код (например ABC123).\n"
-    "Бот сам поймёт, что это код, и ответит, пускать гостя или нет.\n"
-    "Это работает в любой момент, не нужно включать отдельный режим."
+    "Чтобы отметить вход гостя на Баскет Фест, пришли его код. "
+    "Код можно отправить в любой момент — включать отдельный режим не нужно."
 )
 
 # Клавиатура для обычного пользователя (не админа)
 BUYER_KEYBOARD = ReplyKeyboardMarkup([[BTN_BUY_TICKET]], resize_keyboard=True)
 
-# Клавиатура для администратора — включает и кнопку покупки для себя тоже
+# Клавиатура для администратора — включает и кнопку регистрации для себя тоже
 ADMIN_KEYBOARD = ReplyKeyboardMarkup(
     [
         [BTN_BUY_TICKET],
@@ -61,6 +66,7 @@ ADMIN_KEYBOARD = ReplyKeyboardMarkup(
         [BTN_REMOVE_GUEST, BTN_CANCEL_LAST_CHECKIN],
         [BTN_ADD_ADMIN, BTN_REMOVE_ADMIN],
         [BTN_ENTRY_INFO, BTN_HELP],
+        [BTN_BROADCAST],
     ],
     resize_keyboard=True,
 )
@@ -74,5 +80,5 @@ YES_NO_KEYBOARD = ReplyKeyboardMarkup(
 ADMIN_BUTTON_TEXTS = {
     BTN_SET_PRICE, BTN_GUEST_LIST, BTN_ADD_GUEST, BTN_REMOVE_GUEST,
     BTN_ADD_ADMIN, BTN_REMOVE_ADMIN, BTN_ENTRY_INFO, BTN_STATS,
-    BTN_CANCEL_LAST_CHECKIN, BTN_HELP,
+    BTN_CANCEL_LAST_CHECKIN, BTN_HELP, BTN_BROADCAST,
 }

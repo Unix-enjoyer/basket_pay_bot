@@ -8,8 +8,8 @@
 
   1. У админа есть незавершённое действие (например, ждём новую цену)?
      -> это сообщение явно адресовано именно этому действию
-  2. У пользователя есть незавершённая покупка (ждём число детей / телефон)?
-     -> это сообщение явно продолжение покупки
+  2. У пользователя есть незавершённая регистрация (ждём телефон)?
+     -> это сообщение явно продолжение регистрации
   3. Текст совпадает с одной из кнопок?
      -> выполняем соответствующее действие
   4. Админ прислал что-то похожее на код гостя (3 буквы + 3 цифры)?
@@ -26,9 +26,9 @@ from database import is_admin, get_admin_pending_action, get_pending_purchase
 from handlers.keyboards import (
     BTN_BUY_TICKET, BTN_SET_PRICE, BTN_GUEST_LIST, BTN_ADD_GUEST, BTN_REMOVE_GUEST,
     BTN_ADD_ADMIN, BTN_REMOVE_ADMIN, BTN_ENTRY_INFO, BTN_STATS, BTN_CANCEL_LAST_CHECKIN,
-    BTN_HELP, ADMIN_BUTTON_TEXTS,
+    BTN_HELP, BTN_BROADCAST, ADMIN_BUTTON_TEXTS, LEGACY_BUY_TICKET_TEXTS,
 )
-from handlers.buyer import start_purchase, handle_kids_answer, handle_phone_answer
+from handlers.buyer import start_purchase, handle_phone_answer
 from handlers import admin as admin_handlers
 
 # Формат кода: 3 латинские буквы + 3 цифры (см. code_generator.py)
@@ -46,6 +46,7 @@ BUTTON_HANDLERS = {
     BTN_STATS: admin_handlers.show_stats,
     BTN_CANCEL_LAST_CHECKIN: admin_handlers.cancel_last_checkin,
     BTN_HELP: admin_handlers.help_command,
+    BTN_BROADCAST: admin_handlers.start_broadcast,
 }
 
 
@@ -74,13 +75,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             if action == "remove_guest":
                 await admin_handlers.handle_remove_guest_answer(update, context)
                 return
+            if action == "broadcast_message":
+                await admin_handlers.handle_broadcast_answer(update, context)
+                return
 
-    # --- 2. Незавершённая покупка билета ---
+    # --- 2. Незавершённая регистрация ---
     pending_purchase = get_pending_purchase(user.id)
     if pending_purchase is not None:
-        if pending_purchase["stage"] == "awaiting_kids":
-            await handle_kids_answer(update, context, pending_purchase)
-            return
         if pending_purchase["stage"] == "awaiting_phone":
             await handle_phone_answer(update, context, pending_purchase)
             return
@@ -88,7 +89,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # осмысленного, упадём в пункт 5 (подсказка прислать PDF).
 
     # --- 3. Нажатие кнопки ---
-    if text == BTN_BUY_TICKET:
+    if text == BTN_BUY_TICKET or text in LEGACY_BUY_TICKET_TEXTS:
         await start_purchase(update, context)
         return
 
@@ -104,5 +105,5 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     # --- 5. Ничего не подошло ---
     if pending_purchase is not None and pending_purchase["stage"] == "awaiting_receipt":
-        await update.message.reply_text("Жду от тебя файл чека в формате PDF.")
+        await update.message.reply_text("Пришли чек об оплате файлом в формате PDF.")
     # В остальных случаях молчим — чтобы не спамить людям в ответ на случайные сообщения

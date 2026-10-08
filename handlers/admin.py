@@ -28,10 +28,11 @@ from database import (
     get_last_checkin_by_admin,
     cancel_checkin,
     get_attendance_stats,
+    get_all_admins,
 )
 from code_generator import generate_code
 from handlers.keyboards import (
-    ADMIN_HELP_TEXT, ENTRY_INFO_TEXT, YES_NO_KEYBOARD, ADMIN_KEYBOARD,
+    ADMIN_HELP_TEXT, YES_NO_KEYBOARD, ADMIN_KEYBOARD,
     BTN_YES, BTN_NO,
 )
 from logger_setup import logger
@@ -161,21 +162,52 @@ async def handle_remove_guest_answer(update: Update, context: ContextTypes.DEFAU
 
 @admin_only
 async def show_add_admin_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Нажата кнопка «Добавить админа» — просто показываем инструкцию."""
+    """Нажата кнопка «Добавить админа» — просим прислать ID нового админа."""
+    set_admin_pending_action(update.effective_user.id, action="add_admin_id")
     await update.message.reply_text(
-        "Чтобы назначить администратора, перешли сюда любое сообщение этого пользователя. "
-        "Затем ответь на пересланное сообщение командой /add_admin.\n\n"
-        "Если пересылка не работает (у человека скрыт автор пересылки), попроси его написать "
-        "боту команду /myid и пришли мне полученное число: /add_admin 123456789"
+        "Пришли ID человека, которого нужно назначить администратором (только цифры). "
+        "Свой ID он узнаёт, написав боту команду /myid.\n\n"
+        "Можно и по-старому: перешли сюда сообщение этого человека и ответь на него командой /add_admin."
     )
+
+
+async def handle_add_admin_id_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Админ прислал ID для назначения."""
+    text = update.message.text.strip()
+    if not text.isdigit():
+        await update.message.reply_text("ID должен состоять только из цифр. Пришли его ещё раз.")
+        return
+
+    new_id = int(text)
+    add_admin(new_id, tag=None, added_by=update.effective_user.id)
+    clear_admin_pending_action(update.effective_user.id)
+    logger.info(f"Админ {new_id} назначен по ID пользователем {update.effective_user.id}")
+    await update.message.reply_text(f"Пользователь с ID {new_id} назначен администратором.")
 
 
 @admin_only
 async def show_remove_admin_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Нажата кнопка «Удалить админа» — просим прислать ID."""
+    set_admin_pending_action(update.effective_user.id, action="remove_admin_id")
     await update.message.reply_text(
-        "Чтобы снять права администратора, перешли сюда любое сообщение этого пользователя. "
-        "Затем ответь на пересланное сообщение командой /remove_admin."
+        "Пришли ID администратора, у которого нужно снять права (только цифры). "
+        "ID можно посмотреть кнопкой «Список админов».\n\n"
+        "Можно и по-старому: перешли сюда сообщение этого человека и ответь на него командой /remove_admin."
     )
+
+
+async def handle_remove_admin_id_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Админ прислал ID для снятия прав."""
+    text = update.message.text.strip()
+    if not text.isdigit():
+        await update.message.reply_text("ID должен состоять только из цифр. Пришли его ещё раз.")
+        return
+
+    clear_admin_pending_action(update.effective_user.id)
+    if remove_admin(int(text)):
+        await update.message.reply_text(f"У пользователя с ID {text} сняты права администратора.")
+    else:
+        await update.message.reply_text("Снять права главного администратора нельзя.")
 
 
 @admin_only
@@ -265,9 +297,30 @@ async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 # ==================== ВХОД НА ТУРНИР ====================
 
 @admin_only
-async def show_entry_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Нажата кнопка «Вход» — просто инструкция, никакого отдельного режима включать не нужно."""
-    await update.message.reply_text(ENTRY_INFO_TEXT)
+async def show_admin_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Нажата кнопка «Список админов»."""
+    from config import SUPER_ADMIN_ID
+
+    admins = get_all_admins()
+    lines = [f"Администраторы ({len(admins)}):", ""]
+    for a in admins:
+        # Тег в базе мог не сохраниться (главный админ и назначенные по ID записываются без тега),
+        # поэтому сначала спрашиваем актуальный тег у Telegram. Это работает, если человек
+        # хотя бы раз писал боту. Если не вышло — берём тег из базы.
+        tag = a["tag"]
+        try:
+            chat = await context.bot.get_chat(a["user_id"])
+            if chat.username:
+                tag = chat.username
+        except Exception as e:
+            logger.warning(f"Не удалось получить тег админа {a['user_id']}: {e}")
+
+        name = f"@{tag}" if tag else "(без тега)"
+        line = f"{name} — ID {a['user_id']}"
+        if a["user_id"] == SUPER_ADMIN_ID:
+            line += " — главный админ"
+        lines.append(line)
+    await update.message.reply_text("\n".join(lines))
 
 
 async def handle_entry_code(update: Update, context: ContextTypes.DEFAULT_TYPE, code: str) -> None:
@@ -332,7 +385,10 @@ async def handle_broadcast_answer(update: Update, context: ContextTypes.DEFAULT_
     # Гости, добавленные вручную по тегу/телефону, сюда не попадают: бот не знает их Telegram-аккаунт.
     guests = get_guests_with_user_id()
     all_guests = get_all_guests()
-    skipped_manual = len(all_guests) - len(guests)
+
+    # Гости, добавленные вручную (без Telegram user_id): написать им бот не может,
+    # но в итоговый список "не доставлено" они попадают тоже.
+    manual_guests = [g for g in all_guests if not g["user_id"]]
 
     if not guests:
         await update.message.reply_text("Пока нет оплативших, которым бот может отправить сообщение напрямую.")
@@ -341,7 +397,7 @@ async def handle_broadcast_answer(update: Update, context: ContextTypes.DEFAULT_
     await update.message.reply_text(f"Начинаю рассылку. Получателей: {len(guests)}. Отправка может занять некоторое время.")
 
     sent = 0
-    failed = 0
+    failed_guests = []  # сюда складываем всех, кому сообщение не дошло
     for guest in guests:
         personal_text = f"{message_text}\n\nНапоминаю, твой код для входа — {guest['code']}"
         try:
@@ -350,15 +406,33 @@ async def handle_broadcast_answer(update: Update, context: ContextTypes.DEFAULT_
         except Exception as e:
             # Частая причина — человек заблокировал бота после оплаты.
             # Не прерываем всю рассылку из-за одного неудачного отправления.
-            failed += 1
+            failed_guests.append(f"{guest['tag_or_phone']} ({guest['code']})")
             logger.warning(f"Не удалось отправить уведомление {guest['user_id']} ({guest['tag_or_phone']}): {e}")
 
         await asyncio.sleep(BROADCAST_DELAY_SECONDS)
 
-    report = f"Рассылка завершена. Отправлено: {sent}. Не удалось отправить: {failed}."
-    if skipped_manual:
-        report += f"\nПропущены гости, добавленные вручную: {skipped_manual}."
-    await update.message.reply_text(report)
+    # Вручную добавленные гости получить рассылку не могли — добавляем их в тот же список
+    for guest in manual_guests:
+        failed_guests.append(f"{guest['tag_or_phone']} ({guest['code']})")
+
+    await update.message.reply_text(
+        f"Рассылка завершена. Отправлено: {sent}. Не доставлено: {len(failed_guests)}."
+    )
+
+    if failed_guests:
+        # Telegram не принимает сообщения длиннее 4096 символов, поэтому длинный список
+        # режем на части по строкам (не посреди тега).
+        chunks = []
+        current = "Не доставлено:"
+        for line in failed_guests:
+            if len(current) + len(line) + 1 > 4000:
+                chunks.append(current)
+                current = "Не доставлено (продолжение):"
+            current += "\n" + line
+        chunks.append(current)
+
+        for chunk in chunks:
+            await update.message.reply_text(chunk)
 
 
 # ==================== СТАТИСТИКА ====================

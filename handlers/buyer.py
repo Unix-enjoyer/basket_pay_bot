@@ -19,7 +19,10 @@ import tempfile
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from config import RECEIVER_CONTRACT, ACCOUNT_LINK, GROUP_CHAT_ID
+from config import (
+    RECEIVER_CONTRACT, ACCOUNT_LINK, GROUP_CHAT_ID,
+    PAYMENT_DETAILS, PAYMENT_QR_PATH, ORGANIZERS,
+)
 from database import (
     get_current_price,
     set_pending_purchase,
@@ -35,13 +38,23 @@ from receipt_parser import extract_text_from_pdf, parse_receipt_text, ReceiptPar
 from logger_setup import logger
 
 
+# Список организаторов из .env, вставляется в реплики вида "Свяжись с организаторами (@ivan, @olga)".
+# Если ORGANIZERS в .env пуст — получится просто "Свяжись с организаторами".
+ORGANIZERS_TEXT = f" ({ORGANIZERS})" if ORGANIZERS else ""
+
+# Если организаторов несколько (в ORGANIZERS есть запятая) — просим писать только одному
+ORGANIZERS_NOTE = (
+    "\n\nПожалуйста, не пиши всем организаторам сразу, а только одному. Они постараются ответить как можно быстрее."
+    if "," in ORGANIZERS else ""
+)
+
 # Тексты ошибок — собраны в одном месте, чтобы легко было поменять формулировку
 ERROR_NOT_PDF = "Пришли чек файлом в формате PDF. Скриншот или фото не подойдут."
-ERROR_UNKNOWN = "Не удалось обработать чек. Свяжись с организаторами, чтобы проверить оплату."
+ERROR_UNKNOWN = f"Не удалось обработать чек. Свяжись с организаторами{ORGANIZERS_TEXT}, чтобы проверить оплату." + ORGANIZERS_NOTE
 ERROR_STATUS = "В чеке перевод не отмечен как успешный. Проверь статус оплаты."
 ERROR_RECEIVER = "Номер счёта получателя в чеке не совпадает с указанным для оплаты билета. Проверь реквизиты перевода."
 ERROR_DUPLICATE = "Этот чек уже был обработан. Повторно использовать его для оформления билета нельзя."
-ERROR_AMOUNT = "Сумма в чеке меньше стоимости билета. Свяжись с организаторами, чтобы уточнить дальнейшие действия."
+ERROR_AMOUNT = f"Сумма в чеке меньше стоимости билета. Свяжись с организаторами{ORGANIZERS_TEXT}, чтобы уточнить дальнейшие действия." + ORGANIZERS_NOTE
 ERROR_NOT_GROUP_MEMBER = "Регистрация через бота доступна только участникам нашей группы."
 
 # Номер телефона в формате +7 123 456 78 90 (пробелы не обязательны)
@@ -56,6 +69,42 @@ async def is_group_member(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> b
     except Exception as e:
         logger.warning(f"Не удалось проверить членство в группе для {user_id}: {e}")
         return False
+
+
+async def send_payment_info(update: Update, price: int, reminder: bool = False) -> None:
+    """Отправляет реквизиты для оплаты: QR-картинку (если она есть) с текстом в подписи.
+
+    reminder=False — первое сообщение после нажатия кнопки,
+    reminder=True  — напоминание тем, кто нажал кнопку повторно.
+    """
+    if reminder:
+        text = f"Ожидаю чек об оплате на сумму {price} ₽.\n"
+    else:
+        text = ""
+    text += f"Переведи {price} ₽ по следующим реквизитам: {ACCOUNT_LINK}"
+    if PAYMENT_DETAILS:
+        text += f"\n{PAYMENT_DETAILS}"
+    text += (
+        "\n\nОплату нужно производить только с Т-Банка: бот не сможет распознать чеки других банков. "
+        f"Если у тебя нет Т-Банка, пожалуйста, оплати по указанной ссылке и пришли чек организаторам {ORGANIZERS_TEXT}. Они сами занесут тебя в список гостей :)"
+        f"{ORGANIZERS_NOTE}"
+    )
+    text += "\n\nЗатем пришли чек файлом в формате PDF. Фото или скриншот не подойдут."
+
+    # Если QR-файл задан и существует — шлём фото. Подпись к фото в Telegram — не длиннее 1024 символов.
+    if PAYMENT_QR_PATH and os.path.isfile(PAYMENT_QR_PATH):
+        try:
+            with open(PAYMENT_QR_PATH, "rb") as qr_file:
+                if len(text) <= 1024:
+                    await update.message.reply_photo(photo=qr_file, caption=text)
+                else:
+                    await update.message.reply_photo(photo=qr_file)
+                    await update.message.reply_text(text)
+            return
+        except Exception as e:
+            logger.error(f"Не удалось отправить QR-код ({PAYMENT_QR_PATH}): {e}")
+
+    await update.message.reply_text(text)
 
 
 async def start_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -75,9 +124,7 @@ async def start_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # У пользователя уже есть незавершённая регистрация — напоминаем, на чём остановились,
         # вместо того чтобы начинать всё заново и "терять" его место в процессе.
         if existing["stage"] == "awaiting_receipt":
-            await update.message.reply_text(
-                f"Ожидаю чек об оплате на сумму {existing['price_locked']} ₽. Пришли его файлом в формате PDF."
-            )
+            await send_payment_info(update, existing["price_locked"], reminder=True)
         elif existing["stage"] == "awaiting_phone":
             await update.message.reply_text(
                 "Для завершения оформления билета пришли номер телефона в формате +7 123 456 78 90."
@@ -89,10 +136,7 @@ async def start_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     price = get_current_price()
     set_pending_purchase(user.id, stage="awaiting_receipt", price_locked=price)
 
-    await update.message.reply_text(
-        f"Переведи {price} ₽ по следующим реквизитам: {ACCOUNT_LINK}. "
-        f"Затем пришли чек файлом в формате PDF. Фото или скриншот не подойдут."
-    )
+    await send_payment_info(update, price)
 
 
 async def handle_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -210,7 +254,7 @@ async def _finalize_ticket(update: Update, user_id: int, payment_id: int, tag_or
     except Exception as e:
         logger.error(f"Ошибка при выдаче кода для payment_id={payment_id}: {e}")
         await update.message.reply_text(
-            "Оплата принята, но не удалось выдать код входа. Свяжись с организаторами — они выдадут код вручную."
+            f"Оплата принята, но не удалось выдать код входа. Свяжись с организаторами{ORGANIZERS_TEXT} — они выдадут код вручную." + ORGANIZERS_NOTE
         )
         return
 

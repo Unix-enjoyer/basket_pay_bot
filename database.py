@@ -156,6 +156,14 @@ def add_admin(user_id: int, tag: Optional[str], added_by: int) -> None:
     logger.info(f"Админ {user_id} (@{tag}) добавлен пользователем {added_by}")
 
 
+def get_all_admins() -> list:
+    """Все администраторы: user_id, tag (может быть пустым), added_at."""
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT user_id, tag, added_at FROM admins ORDER BY added_at"
+        ).fetchall()
+
+
 def remove_admin(user_id: int) -> bool:
     if user_id == SUPER_ADMIN_ID:
         return False

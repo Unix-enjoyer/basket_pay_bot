@@ -24,7 +24,7 @@ BTN_ADD_GUEST = "➕ Добавить гостя"
 BTN_REMOVE_GUEST = "➖ Удалить гостя"
 BTN_ADD_ADMIN = "👤 Добавить админа"
 BTN_REMOVE_ADMIN = "🚫 Удалить админа"
-BTN_ENTRY_INFO = "🚪 Вход"
+BTN_ADMIN_LIST = "👥 Список админов"
 BTN_STATS = "📊 Статистика по приходу"
 BTN_CANCEL_LAST_CHECKIN = "↩️ Отменить последний вход"
 BTN_BROADCAST = "📢 Уведомление"
@@ -40,8 +40,8 @@ ADMIN_HELP_TEXT = (
     f"{BTN_GUEST_LIST} — список всех, кому выданы коды\n"
     f"{BTN_ADD_GUEST} — добавить гостя вручную (без чека)\n"
     f"{BTN_REMOVE_GUEST} — удалить гостя по коду\n"
-    f"{BTN_ADD_ADMIN} / {BTN_REMOVE_ADMIN} — назначить/снять админа (перешли сообщение человека + reply командой)\n"
-    f"{BTN_ENTRY_INFO} — как проверять гостей на входе\n"
+    f"{BTN_ADD_ADMIN} / {BTN_REMOVE_ADMIN} — назначить/снять админа (перешли сообщение человека + reply командой, либо /add_admin ID и /remove_admin ID)\n"
+    f"{BTN_ADMIN_LIST} — показать всех администраторов\n"
     f"{BTN_STATS} — итоговая статистика по приходу\n"
     f"{BTN_CANCEL_LAST_CHECKIN} — отменить свой последний отмеченный вход (если ошиблись)\n"
     f"{BTN_BROADCAST} — разослать сообщение всем, кто оплатил билет (с напоминанием кода каждому)\n\n"
@@ -65,7 +65,7 @@ ADMIN_KEYBOARD = ReplyKeyboardMarkup(
         [BTN_SET_PRICE, BTN_ADD_GUEST],
         [BTN_REMOVE_GUEST, BTN_CANCEL_LAST_CHECKIN],
         [BTN_ADD_ADMIN, BTN_REMOVE_ADMIN],
-        [BTN_ENTRY_INFO, BTN_HELP],
+        [BTN_ADMIN_LIST, BTN_HELP],
         [BTN_BROADCAST],
     ],
     resize_keyboard=True,
@@ -79,6 +79,6 @@ YES_NO_KEYBOARD = ReplyKeyboardMarkup(
 # Множество всех текстов кнопок админа — удобно для проверки "это вообще кнопка?"
 ADMIN_BUTTON_TEXTS = {
     BTN_SET_PRICE, BTN_GUEST_LIST, BTN_ADD_GUEST, BTN_REMOVE_GUEST,
-    BTN_ADD_ADMIN, BTN_REMOVE_ADMIN, BTN_ENTRY_INFO, BTN_STATS,
+    BTN_ADD_ADMIN, BTN_REMOVE_ADMIN, BTN_ADMIN_LIST, BTN_STATS,
     BTN_CANCEL_LAST_CHECKIN, BTN_HELP, BTN_BROADCAST,
 }

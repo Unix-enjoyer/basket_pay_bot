@@ -25,7 +25,7 @@ from telegram.ext import ContextTypes
 from database import is_admin, get_admin_pending_action, get_pending_purchase
 from handlers.keyboards import (
     BTN_BUY_TICKET, BTN_SET_PRICE, BTN_GUEST_LIST, BTN_ADD_GUEST, BTN_REMOVE_GUEST,
-    BTN_ADD_ADMIN, BTN_REMOVE_ADMIN, BTN_ENTRY_INFO, BTN_STATS, BTN_CANCEL_LAST_CHECKIN,
+    BTN_ADD_ADMIN, BTN_REMOVE_ADMIN, BTN_ADMIN_LIST, BTN_STATS, BTN_CANCEL_LAST_CHECKIN,
     BTN_HELP, BTN_BROADCAST, ADMIN_BUTTON_TEXTS, LEGACY_BUY_TICKET_TEXTS,
 )
 from handlers.buyer import start_purchase, handle_phone_answer
@@ -42,7 +42,7 @@ BUTTON_HANDLERS = {
     BTN_REMOVE_GUEST: admin_handlers.start_remove_guest,
     BTN_ADD_ADMIN: admin_handlers.show_add_admin_help,
     BTN_REMOVE_ADMIN: admin_handlers.show_remove_admin_help,
-    BTN_ENTRY_INFO: admin_handlers.show_entry_info,
+    BTN_ADMIN_LIST: admin_handlers.show_admin_list,
     BTN_STATS: admin_handlers.show_stats,
     BTN_CANCEL_LAST_CHECKIN: admin_handlers.cancel_last_checkin,
     BTN_HELP: admin_handlers.help_command,
@@ -74,6 +74,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 return
             if action == "remove_guest":
                 await admin_handlers.handle_remove_guest_answer(update, context)
+                return
+            if action == "add_admin_id":
+                await admin_handlers.handle_add_admin_id_answer(update, context)
+                return
+            if action == "remove_admin_id":
+                await admin_handlers.handle_remove_admin_id_answer(update, context)
                 return
             if action == "broadcast_message":
                 await admin_handlers.handle_broadcast_answer(update, context)

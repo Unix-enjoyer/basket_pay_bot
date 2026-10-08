@@ -10,3 +10,5 @@ services:
       # Так при пересборке или обновлении образа они не потеряются.
       - ./data:/app/data
       - ./logs:/app/logs
+      # Картинка с QR-кодом для оплаты (путь в .env: PAYMENT_QR_PATH=assets/qr.jpg)
+      - ./assets:/app/assets

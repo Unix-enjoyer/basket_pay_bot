@@ -46,13 +46,15 @@ def parse_receipt_text(text: str) -> ParsedReceipt:
         return match.group(1).strip()
 
     receipt_number = find(r"Квитанция\s*№\s*([\d-]+)", "номер квитанции")
-    amount_str = find(r"Сумма\s+(\d+)\s*₽", "сумма")
+    # Сумма может быть записана как "1500 ₽", "1 500 ₽" (пробел тысяч) или "1500,50 ₽"
+    amount_str = find(r"Сумма\s+(\d[\d\s\u00a0\u202f]*(?:[.,]\d{1,2})?)\s*₽", "сумма")
+    amount_str = re.sub(r"[\s\u00a0\u202f]", "", amount_str).replace(",", ".")
     status = find(r"Статус\s+(\S+)", "статус")
     receiver_contract = find(r"Договор получателя\s+(\d+)", "договор получателя")
 
     return ParsedReceipt(
         receipt_number=receipt_number,
-        amount=int(amount_str),
+        amount=int(float(amount_str)),  # копейки отбрасываем: 999,50 -> 999 (меньше 1000, это верно)
         status=status,
         receiver_contract=receiver_contract,
     )

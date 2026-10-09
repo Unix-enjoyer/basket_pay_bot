@@ -38,7 +38,7 @@ async def notify_pending_payments(app: Application) -> None:
     logger.warning(f"Найдено {len(pending)} зависших оплат со статусом 'pending'")
 
     lines = [
-        f"Квитанция {p['receipt_number']}, сумма {p['amount']}₽, от user_id={p['sender_user_id']}"
+        f"📋 Квитанция {p['receipt_number']}, сумма {p['amount']}₽, от user_id={p['sender_user_id']}"
         for p in pending
     ]
     text = (

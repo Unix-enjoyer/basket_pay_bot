@@ -111,5 +111,5 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     # --- 5. Ничего не подошло ---
     if pending_purchase is not None and pending_purchase["stage"] == "awaiting_receipt":
-        await update.message.reply_text("Пришли чек об оплате файлом в формате PDF.")
+        await update.message.reply_text("📎 Пришли чек об оплате файлом в формате PDF.")
     # В остальных случаях молчим — чтобы не спамить людям в ответ на случайные сообщения

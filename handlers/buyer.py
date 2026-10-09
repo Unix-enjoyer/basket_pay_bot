@@ -44,18 +44,18 @@ ORGANIZERS_TEXT = f" ({ORGANIZERS})" if ORGANIZERS else ""
 
 # Если организаторов несколько (в ORGANIZERS есть запятая) — просим писать только одному
 ORGANIZERS_NOTE = (
-    "\n\nПожалуйста, не пиши всем организаторам сразу, а только одному. Они постараются ответить как можно быстрее."
+    "\n\nПожалуйста, обращайся только к одному организатору, чтобы не дублировать обращения. Мы постараемся ответить как можно быстрее."
     if "," in ORGANIZERS else ""
 )
 
 # Тексты ошибок — собраны в одном месте, чтобы легко было поменять формулировку
-ERROR_NOT_PDF = "Пришли чек файлом в формате PDF. Скриншот или фото не подойдут."
-ERROR_UNKNOWN = f"Не удалось обработать чек. Свяжись с организаторами{ORGANIZERS_TEXT}, чтобы проверить оплату." + ORGANIZERS_NOTE
-ERROR_STATUS = "В чеке перевод не отмечен как успешный. Проверь статус оплаты."
-ERROR_RECEIVER = "Номер счёта получателя в чеке не совпадает с указанным для оплаты билета. Проверь реквизиты перевода."
-ERROR_DUPLICATE = "Этот чек уже был обработан. Повторно использовать его для оформления билета нельзя."
-ERROR_AMOUNT = f"Сумма в чеке меньше стоимости билета. Свяжись с организаторами{ORGANIZERS_TEXT}, чтобы уточнить дальнейшие действия." + ORGANIZERS_NOTE
-ERROR_NOT_GROUP_MEMBER = "Регистрация через бота доступна только участникам нашей группы."
+ERROR_NOT_PDF = "⚠️ Пришли чек файлом в формате PDF. Скриншот или фото не подойдут."
+ERROR_UNKNOWN = f"⚠️ Не удалось обработать чек. Свяжись с организаторами{ORGANIZERS_TEXT}, чтобы проверить оплату." + ORGANIZERS_NOTE
+ERROR_STATUS = "⚠️ В чеке перевод не отмечен как успешный. Проверь статус оплаты."
+ERROR_RECEIVER = "⚠️ Номер счёта получателя в чеке не совпадает с указанным для оплаты билета. Проверь реквизиты перевода."
+ERROR_DUPLICATE = "⚠️ Этот чек уже был обработан. Повторно использовать его для оформления билета нельзя."
+ERROR_AMOUNT = f"⚠️ Сумма в чеке меньше стоимости билета. Свяжись с организаторами{ORGANIZERS_TEXT}, чтобы уточнить дальнейшие действия." + ORGANIZERS_NOTE
+ERROR_NOT_GROUP_MEMBER = "⚠️ Регистрация через бота доступна только участникам нашей группы."
 
 # Номер телефона в формате +7 123 456 78 90 (пробелы не обязательны)
 PHONE_RE = re.compile(r"^\+7\s*\d{3}\s*\d{3}\s*\d{2}\s*\d{2}$")
@@ -78,18 +78,23 @@ async def send_payment_info(update: Update, price: int, reminder: bool = False) 
     reminder=True  — напоминание тем, кто нажал кнопку повторно.
     """
     if reminder:
-        text = f"Ожидаю чек об оплате на сумму {price} ₽.\n"
+        text = f"⏳ Для подтверждения регистрации необходимо внести оплату в размере {price} ₽.\n\n"
     else:
         text = ""
-    text += f"Переведи {price} ₽ по следующим реквизитам: {ACCOUNT_LINK}"
+    text += f"💳 Способы оплаты(сумма {price} ₽): \n\n По ссылке:\n {ACCOUNT_LINK}"
     if PAYMENT_DETAILS:
         text += f"\n{PAYMENT_DETAILS}"
     text += (
-        "\n\nОплату нужно производить только с Т-Банка: бот не сможет распознать чеки других банков. "
-        f"Если у тебя нет Т-Банка, пожалуйста, оплати по указанной ссылке и пришли чек организаторам {ORGANIZERS_TEXT}. Они сами занесут тебя в список гостей :)"
-        f"{ORGANIZERS_NOTE}"
+        "\n\n📌 Важно!"
+        f"\n\n⚠️ Бот автоматически распознаёт только чеки Т-Банка. Если ты пользуешься другим банком, можешь оплатить по ссылке выше и отправить чек одному из организаторов: {ORGANIZERS_TEXT}"
+        f"\nОрганизатор вручную подтвердит оплату и добавит тебя в список гостей.\n"
+        f"{ORGANIZERS_NOTE}\n\n"
+        "📄 Если оплачиваешь через Т-Банк, отправь чек прямо сюда в формате PDF. Фото или скриншот не подойдут.\n"
+
+        "Фотографии и скриншоты бот не принимает.\n\n"
+
+        "Спасибо! 🏀"
     )
-    text += "\n\nЗатем пришли чек файлом в формате PDF. Фото или скриншот не подойдут."
 
     # Если QR-файл задан и существует — шлём фото. Подпись к фото в Telegram — не длиннее 1024 символов.
     if PAYMENT_QR_PATH and os.path.isfile(PAYMENT_QR_PATH):
@@ -127,7 +132,7 @@ async def start_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await send_payment_info(update, existing["price_locked"], reminder=True)
         elif existing["stage"] == "awaiting_phone":
             await update.message.reply_text(
-                "Для завершения оформления билета пришли номер телефона в формате +7 123 456 78 90."
+                "📱 Для завершения оформления билета пришли номер телефона в формате +7 123 456 78 90."
             )
         return
 
@@ -147,7 +152,7 @@ async def handle_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     pending = get_pending_purchase(user.id)
     if pending is None or pending["stage"] != "awaiting_receipt":
         await update.message.reply_text(
-            "Чтобы начать регистрацию, сначала нажми кнопку «🎟 Зарегистрироваться»."
+            "🎟 Чтобы начать регистрацию, сначала нажми кнопку «🎟 Зарегистрироваться»."
         )
         return
 
@@ -220,8 +225,8 @@ async def handle_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             price_locked=pending["price_locked"], payment_id=payment_id,
         )
         await update.message.reply_text(
-            "Чек принят. У тебя не указан username в Telegram, поэтому для оформления билета нужен номер телефона. "
-            "Пришли его в формате +7 123 456 78 90."
+            "✅ Чек принят! У тебя не указан username в Telegram, поэтому для оформления билета нужен номер телефона.\n\n"
+            "📱 Пришли его в формате +7 123 456 78 90."
         )
 
 
@@ -231,7 +236,7 @@ async def handle_phone_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if not PHONE_RE.fullmatch(text):
         await update.message.reply_text(
-            "Не удалось распознать номер телефона. Пришли его в формате +7 123 456 78 90."
+            "⚠️ Не удалось распознать номер телефона. Пришли его в формате +7 123 456 78 90."
         )
         return
 
@@ -254,13 +259,14 @@ async def _finalize_ticket(update: Update, user_id: int, payment_id: int, tag_or
     except Exception as e:
         logger.error(f"Ошибка при выдаче кода для payment_id={payment_id}: {e}")
         await update.message.reply_text(
-            f"Оплата принята, но не удалось выдать код входа. Свяжись с организаторами{ORGANIZERS_TEXT} — они выдадут код вручную." + ORGANIZERS_NOTE
+            f"⚠️ Оплата принята, но не удалось выдать код входа. Свяжись с организаторами{ORGANIZERS_TEXT} — они выдадут код вручную." + ORGANIZERS_NOTE
         )
         return
 
     await update.message.reply_text(
-        f"Твой билет на Баскет Фест оформлен! Назови этот код на входе: {code}. "
-        f"Данные билета: {tag_or_phone}.\n\n"
+        f"🎉 Твой билет на Баскет Фест оформлен!\n\n"
+        f"🎟 Назови этот код на входе: {code}\n"
+        f"📋 Данные билета: {tag_or_phone}\n\n"
         f"Ждём тебя на нашем Баскет Фесте 26 декабря! 🏀"
     )
     logger.info(f"Код {code} выдан для payment_id={payment_id} ({tag_or_phone})")

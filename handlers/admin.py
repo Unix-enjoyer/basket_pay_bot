@@ -43,7 +43,7 @@ def admin_only(func):
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         if not is_admin(user.id):
-            await update.message.reply_text("Эта функция доступна только администраторам.")
+            await update.message.reply_text("⛔ Эта функция доступна только администраторам.")
             return
         return await func(update, context)
     return wrapper
@@ -55,19 +55,19 @@ def admin_only(func):
 async def start_set_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Нажата кнопка «Изменить цену»."""
     set_admin_pending_action(update.effective_user.id, action="set_price")
-    await update.message.reply_text("Напиши новую цену билета в рублях — только число, например 1500.")
+    await update.message.reply_text("💰 Напиши новую цену билета в рублях — только число, например 1500.")
 
 
 async def handle_set_price_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = update.message.text.strip()
     if not text.isdigit():
-        await update.message.reply_text("Укажи цену числом, например 1500. Попробуй ещё раз.")
+        await update.message.reply_text("⚠️ Укажи цену числом, например 1500. Попробуй ещё раз.")
         return
 
     new_price = int(text)
     set_price(new_price, changed_by=update.effective_user.id)
     clear_admin_pending_action(update.effective_user.id)
-    await update.message.reply_text(f"Цена билета изменена: {new_price} ₽.")
+    await update.message.reply_text(f"✅ Цена билета изменена: {new_price} ₽.")
 
 
 # ==================== СПИСОК ОПЛАТИВШИХ ====================
@@ -76,7 +76,7 @@ async def handle_set_price_answer(update: Update, context: ContextTypes.DEFAULT_
 async def show_guest_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     guests = get_all_guests()
     if not guests:
-        await update.message.reply_text("Пока нет оплаченных билетов.")
+        await update.message.reply_text("📋 Пока нет оплаченных билетов.")
         return
 
     lines = []
@@ -86,7 +86,7 @@ async def show_guest_list(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             line += f" ({g['comment']})"
         lines.append(line)
 
-    text = f"Список оплативших — {len(lines)} чел.:\n\n" + "\n".join(lines)
+    text = f"📋 Список оплативших — {len(lines)} чел.:\n\n" + "\n".join(lines)
     for i in range(0, len(text), 4000):
         await update.message.reply_text(text[i:i + 4000])
 
@@ -97,13 +97,13 @@ async def show_guest_list(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def start_add_guest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Нажата кнопка «Добавить гостя»."""
     set_admin_pending_action(update.effective_user.id, action="add_guest_tag")
-    await update.message.reply_text("Пришли username гостя в Telegram (например, @tag) или его номер телефона.")
+    await update.message.reply_text("✏️ Пришли username гостя в Telegram (например, @tag) или его номер телефона.")
 
 
 async def handle_add_guest_tag_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     tag_or_phone = update.message.text.strip()
     set_admin_pending_action(update.effective_user.id, action="add_guest_comment_yn", temp_tag=tag_or_phone)
-    await update.message.reply_text("Добавить комментарий к записи гостя?", reply_markup=YES_NO_KEYBOARD)
+    await update.message.reply_text("✏️ Добавить комментарий к записи гостя?", reply_markup=YES_NO_KEYBOARD)
 
 
 async def handle_add_guest_comment_yn_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, temp_tag: str) -> None:
@@ -111,14 +111,14 @@ async def handle_add_guest_comment_yn_answer(update: Update, context: ContextTyp
 
     if text == BTN_YES:
         set_admin_pending_action(update.effective_user.id, action="add_guest_comment_text", temp_tag=temp_tag)
-        await update.message.reply_text("Напиши комментарий к записи гостя.")
+        await update.message.reply_text("✏️ Напиши комментарий к записи гостя.")
         return
 
     if text == BTN_NO:
         await _finish_add_guest(update, tag_or_phone=temp_tag, comment=None)
         return
 
-    await update.message.reply_text("Нажми кнопку «Да» или «Нет».", reply_markup=YES_NO_KEYBOARD)
+    await update.message.reply_text("⚠️ Нажми кнопку «Да» или «Нет».", reply_markup=YES_NO_KEYBOARD)
 
 
 async def handle_add_guest_comment_text_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, temp_tag: str) -> None:
@@ -131,9 +131,9 @@ async def _finish_add_guest(update: Update, tag_or_phone: str, comment) -> None:
     add_guest(code=code, tag_or_phone=tag_or_phone, added_by_admin=update.effective_user.id, comment=comment)
     clear_admin_pending_action(update.effective_user.id)
 
-    text = f"Гость добавлен вручную. Код входа: {code}. Данные гостя: {tag_or_phone}."
+    text = f"✅ Гость добавлен вручную.\n\n🎟 Код входа: {code}\n📋 Данные гостя: {tag_or_phone}"
     if comment:
-        text += f"\nКомментарий: {comment}"
+        text += f"\n✏️ Комментарий: {comment}"
     await update.message.reply_text(text, reply_markup=ADMIN_KEYBOARD)
 
 
@@ -142,7 +142,7 @@ async def _finish_add_guest(update: Update, tag_or_phone: str, comment) -> None:
 @admin_only
 async def start_remove_guest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     set_admin_pending_action(update.effective_user.id, action="remove_guest")
-    await update.message.reply_text("Пришли код гостя, которого нужно удалить из списка.")
+    await update.message.reply_text("➖ Пришли код гостя, которого нужно удалить из списка.")
 
 
 async def handle_remove_guest_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -151,9 +151,9 @@ async def handle_remove_guest_answer(update: Update, context: ContextTypes.DEFAU
     clear_admin_pending_action(update.effective_user.id)
 
     if success:
-        await update.message.reply_text(f"Гость с кодом {code} удалён из списка.")
+        await update.message.reply_text(f"✅ Гость с кодом {code} удалён из списка.")
     else:
-        await update.message.reply_text(f"Гость с кодом {code} не найден.")
+        await update.message.reply_text(f"⚠️ Гость с кодом {code} не найден.")
 
 
 # ==================== ДОБАВЛЕНИЕ / СНЯТИЕ АДМИНА ====================
@@ -165,7 +165,7 @@ async def show_add_admin_help(update: Update, context: ContextTypes.DEFAULT_TYPE
     """Нажата кнопка «Добавить админа» — просим прислать ID нового админа."""
     set_admin_pending_action(update.effective_user.id, action="add_admin_id")
     await update.message.reply_text(
-        "Пришли ID человека, которого нужно назначить администратором (только цифры). "
+        "👤 Пришли ID человека, которого нужно назначить администратором (только цифры). "
         "Свой ID он узнаёт, написав боту команду /myid.\n\n"
         "Можно и по-старому: перешли сюда сообщение этого человека и ответь на него командой /add_admin."
     )
@@ -175,14 +175,14 @@ async def handle_add_admin_id_answer(update: Update, context: ContextTypes.DEFAU
     """Админ прислал ID для назначения."""
     text = update.message.text.strip()
     if not text.isdigit():
-        await update.message.reply_text("ID должен состоять только из цифр. Пришли его ещё раз.")
+        await update.message.reply_text("⚠️ ID должен состоять только из цифр. Пришли его ещё раз.")
         return
 
     new_id = int(text)
     add_admin(new_id, tag=None, added_by=update.effective_user.id)
     clear_admin_pending_action(update.effective_user.id)
     logger.info(f"Админ {new_id} назначен по ID пользователем {update.effective_user.id}")
-    await update.message.reply_text(f"Пользователь с ID {new_id} назначен администратором.")
+    await update.message.reply_text(f"✅ Пользователь с ID {new_id} назначен администратором.")
 
 
 @admin_only
@@ -190,7 +190,7 @@ async def show_remove_admin_help(update: Update, context: ContextTypes.DEFAULT_T
     """Нажата кнопка «Удалить админа» — просим прислать ID."""
     set_admin_pending_action(update.effective_user.id, action="remove_admin_id")
     await update.message.reply_text(
-        "Пришли ID администратора, у которого нужно снять права (только цифры). "
+        "🚫 Пришли ID администратора, у которого нужно снять права (только цифры). "
         "ID можно посмотреть кнопкой «Список админов».\n\n"
         "Можно и по-старому: перешли сюда сообщение этого человека и ответь на него командой /remove_admin."
     )
@@ -200,14 +200,14 @@ async def handle_remove_admin_id_answer(update: Update, context: ContextTypes.DE
     """Админ прислал ID для снятия прав."""
     text = update.message.text.strip()
     if not text.isdigit():
-        await update.message.reply_text("ID должен состоять только из цифр. Пришли его ещё раз.")
+        await update.message.reply_text("⚠️ ID должен состоять только из цифр. Пришли его ещё раз.")
         return
 
     clear_admin_pending_action(update.effective_user.id)
     if remove_admin(int(text)):
-        await update.message.reply_text(f"У пользователя с ID {text} сняты права администратора.")
+        await update.message.reply_text(f"✅ У пользователя с ID {text} сняты права администратора.")
     else:
-        await update.message.reply_text("Снять права главного администратора нельзя.")
+        await update.message.reply_text("⚠️ Снять права главного администратора нельзя.")
 
 
 @admin_only
@@ -216,12 +216,12 @@ async def add_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     # из-за настроек приватности. Свой ID человек узнаёт командой /myid.
     if context.args:
         if not context.args[0].isdigit():
-            await update.message.reply_text("ID должен состоять только из цифр. Пример: /add_admin 123456789")
+            await update.message.reply_text("⚠️ ID должен состоять только из цифр. Пример: /add_admin 123456789")
             return
         new_id = int(context.args[0])
         add_admin(new_id, tag=None, added_by=update.effective_user.id)
         logger.info(f"Админ {new_id} назначен по ID пользователем {update.effective_user.id}")
-        await update.message.reply_text(f"Пользователь с ID {new_id} назначен администратором.")
+        await update.message.reply_text(f"✅ Пользователь с ID {new_id} назначен администратором.")
         return
 
     replied = update.message.reply_to_message
@@ -233,20 +233,20 @@ async def add_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     if isinstance(origin, MessageOriginHiddenUser):
         await update.message.reply_text(
-            "Не удалось определить пользователя: его настройки приватности скрывают автора пересланных сообщений. "
+            "⚠️ Не удалось определить пользователя: его настройки приватности скрывают автора пересланных сообщений. "
             "Попроси его разрешить отображение автора при пересылке и попробуй снова."
         )
         return
 
     if not isinstance(origin, MessageOriginUser):
         await update.message.reply_text(
-            "Не удалось определить пользователя по пересланному сообщению. Перешли сообщение, отправленное от личного аккаунта."
+            "⚠️ Не удалось определить пользователя по пересланному сообщению. Перешли сообщение, отправленное от личного аккаунта."
         )
         return
 
     new_admin = origin.sender_user
     add_admin(new_admin.id, tag=new_admin.username, added_by=update.effective_user.id)
-    await update.message.reply_text(f"Пользователь @{new_admin.username} назначен администратором.")
+    await update.message.reply_text(f"✅ Пользователь @{new_admin.username} назначен администратором.")
 
 
 @admin_only
@@ -254,12 +254,12 @@ async def remove_admin_command(update: Update, context: ContextTypes.DEFAULT_TYP
     # Запасной способ: /remove_admin 123456789
     if context.args:
         if not context.args[0].isdigit():
-            await update.message.reply_text("ID должен состоять только из цифр. Пример: /remove_admin 123456789")
+            await update.message.reply_text("⚠️ ID должен состоять только из цифр. Пример: /remove_admin 123456789")
             return
         if remove_admin(int(context.args[0])):
-            await update.message.reply_text(f"У пользователя с ID {context.args[0]} сняты права администратора.")
+            await update.message.reply_text(f"✅ У пользователя с ID {context.args[0]} сняты права администратора.")
         else:
-            await update.message.reply_text("Снять права главного администратора нельзя.")
+            await update.message.reply_text("⚠️ Снять права главного администратора нельзя.")
         return
 
     replied = update.message.reply_to_message
@@ -271,27 +271,27 @@ async def remove_admin_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if isinstance(origin, MessageOriginHiddenUser):
         await update.message.reply_text(
-            "Не удалось определить пользователя: его настройки приватности скрывают автора пересланных сообщений."
+            "⚠️ Не удалось определить пользователя: его настройки приватности скрывают автора пересланных сообщений."
         )
         return
 
     if not isinstance(origin, MessageOriginUser):
         await update.message.reply_text(
-            "Не удалось определить пользователя по пересланному сообщению. Перешли сообщение, отправленное от личного аккаунта."
+            "⚠️ Не удалось определить пользователя по пересланному сообщению. Перешли сообщение, отправленное от личного аккаунта."
         )
         return
 
     target = origin.sender_user
     success = remove_admin(target.id)
     if success:
-        await update.message.reply_text(f"У пользователя @{target.username} сняты права администратора.")
+        await update.message.reply_text(f"✅ У пользователя @{target.username} сняты права администратора.")
     else:
-        await update.message.reply_text("Снять права главного администратора нельзя.")
+        await update.message.reply_text("⚠️ Снять права главного администратора нельзя.")
 
 
 async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/myid — любой пользователь узнаёт свой числовой ID (нужен, чтобы назначить его админом)."""
-    await update.message.reply_text(f"Твой ID: {update.effective_user.id}")
+    await update.message.reply_text(f"🆔 Твой ID: {update.effective_user.id}")
 
 
 # ==================== ВХОД НА ТУРНИР ====================
@@ -302,7 +302,7 @@ async def show_admin_list(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     from config import SUPER_ADMIN_ID
 
     admins = get_all_admins()
-    lines = [f"Администраторы ({len(admins)}):", ""]
+    lines = [f"👥 Администраторы ({len(admins)}):", ""]
     for a in admins:
         # Тег в базе мог не сохраниться (главный админ и назначенные по ID записываются без тега),
         # поэтому сначала спрашиваем актуальный тег у Telegram. Это работает, если человек
@@ -316,9 +316,9 @@ async def show_admin_list(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             logger.warning(f"Не удалось получить тег админа {a['user_id']}: {e}")
 
         name = f"@{tag}" if tag else "(без тега)"
-        line = f"{name} — ID {a['user_id']}"
+        line = f"🔑 {name} — ID {a['user_id']}"
         if a["user_id"] == SUPER_ADMIN_ID:
-            line += " — главный админ"
+            line += " — главный админ ⭐"
         lines.append(line)
     await update.message.reply_text("\n".join(lines))
 
@@ -332,16 +332,16 @@ async def handle_entry_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     result = check_in_guest(code, admin_id=admin_id)
 
     if result is None:
-        await update.message.reply_text("Гость с таким кодом не найден в списке.")
+        await update.message.reply_text("❌ Гость с таким кодом не найден в списке.")
         return
 
     if result["already"]:
         await update.message.reply_text(
-            f"По этому коду вход уже отмечен. Время входа: {result['checked_in_at']}."
+            f"⚠️ По этому коду вход уже отмечен. Время входа: {result['checked_in_at']}."
         )
         return
 
-    await update.message.reply_text(f"Гость {result['tag_or_phone']} найден. Вход отмечен. Добро пожаловать на Баскет Фест!")
+    await update.message.reply_text(f"✅ Гость {result['tag_or_phone']} найден. Вход отмечен. Добро пожаловать на Баскет Фест! 🏀")
 
 
 @admin_only
@@ -351,12 +351,12 @@ async def cancel_last_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE
     last = get_last_checkin_by_admin(admin_id)
 
     if last is None:
-        await update.message.reply_text("Нет отмеченных тобой входов, которые можно отменить.")
+        await update.message.reply_text("ℹ️ Нет отмеченных тобой входов, которые можно отменить.")
         return
 
     cancel_checkin(last["code"])
     await update.message.reply_text(
-        f"Отметка о входе отменена: {last['code']} — {last['tag_or_phone']}. Гость больше не отмечен как вошедший."
+        f"↩️ Отметка о входе отменена: {last['code']} — {last['tag_or_phone']}. Гость больше не отмечен как вошедший."
     )
 
 
@@ -372,7 +372,7 @@ async def start_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     """Нажата кнопка «Уведомление»."""
     set_admin_pending_action(update.effective_user.id, action="broadcast_message")
     await update.message.reply_text(
-        "Напиши сообщение для рассылки всем оплатившим. "
+        "📨 Напиши сообщение для рассылки всем оплатившим. "
         "В конце каждого сообщения автоматически появится напоминание с кодом входа получателя."
     )
 
@@ -391,15 +391,15 @@ async def handle_broadcast_answer(update: Update, context: ContextTypes.DEFAULT_
     manual_guests = [g for g in all_guests if not g["user_id"]]
 
     if not guests:
-        await update.message.reply_text("Пока нет оплативших, которым бот может отправить сообщение напрямую.")
+        await update.message.reply_text("⚠️ Пока нет оплативших, которым бот может отправить сообщение напрямую.")
         return
 
-    await update.message.reply_text(f"Начинаю рассылку. Получателей: {len(guests)}. Отправка может занять некоторое время.")
+    await update.message.reply_text(f"📨 Начинаю рассылку. Получателей: {len(guests)}. Отправка может занять некоторое время.")
 
     sent = 0
     failed_guests = []  # сюда складываем всех, кому сообщение не дошло
     for guest in guests:
-        personal_text = f"{message_text}\n\nНапоминаю, твой код для входа — {guest['code']}"
+        personal_text = f"{message_text}\n\n🎟 Напоминаю, твой код для входа — {guest['code']}"
         try:
             await context.bot.send_message(chat_id=guest["user_id"], text=personal_text)
             sent += 1
@@ -416,18 +416,18 @@ async def handle_broadcast_answer(update: Update, context: ContextTypes.DEFAULT_
         failed_guests.append(f"{guest['tag_or_phone']} ({guest['code']})")
 
     await update.message.reply_text(
-        f"Рассылка завершена. Отправлено: {sent}. Не доставлено: {len(failed_guests)}."
+        f"✅ Рассылка завершена. Отправлено: {sent}. Не доставлено: {len(failed_guests)}."
     )
 
     if failed_guests:
         # Telegram не принимает сообщения длиннее 4096 символов, поэтому длинный список
         # режем на части по строкам (не посреди тега).
         chunks = []
-        current = "Не доставлено:"
+        current = "⚠️ Не доставлено:"
         for line in failed_guests:
             if len(current) + len(line) + 1 > 4000:
                 chunks.append(current)
-                current = "Не доставлено (продолжение):"
+                current = "⚠️ Не доставлено (продолжение):"
             current += "\n" + line
         chunks.append(current)
 
@@ -441,18 +441,18 @@ async def handle_broadcast_answer(update: Update, context: ContextTypes.DEFAULT_
 async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     stats = get_attendance_stats()
 
-    lines = [f"Пришли: {stats['checked_in_count']} из {stats['total']} гостей.", ""]
+    lines = [f"📊 Пришли: {stats['checked_in_count']} из {stats['total']} гостей.", ""]
 
     not_came = stats["not_checked_in"]
-    lines.append("Не пришли: " + (", ".join(not_came) if not_came else "все пришли 🎉"))
+    lines.append("❌ Не пришли: " + (", ".join(not_came) if not_came else "🎉 все пришли"))
     lines.append("")
 
     for price in sorted(stats["price_breakdown"].keys()):
         count = stats["price_breakdown"][price]
-        lines.append(f"Билеты по цене {price} ₽: {count} чел.")
+        lines.append(f"🎟 Билеты по цене {price} ₽: {count} чел.")
 
     if stats["manual_count"]:
-        lines.append(f"Добавлены вручную: {stats['manual_count']} чел.")
+        lines.append(f"✏️ Добавлены вручную: {stats['manual_count']} чел.")
 
     text = "\n".join(lines)
     for i in range(0, len(text), 4000):

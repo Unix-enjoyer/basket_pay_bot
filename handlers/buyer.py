@@ -12,16 +12,17 @@
 же места после следующего сообщения.
 """
 
+import html
 import os
 import re
 import tempfile
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, CopyTextButton
 from telegram.ext import ContextTypes
 
 from config import (
     RECEIVER_CONTRACT, ACCOUNT_LINK, GROUP_CHAT_ID,
-    PAYMENT_DETAILS, PAYMENT_QR_PATH, ORGANIZERS,
+    PAYMENT_QR_PATH, ORGANIZERS, RECEIVER_NAME,
 )
 from database import (
     get_current_price,
@@ -44,7 +45,7 @@ ORGANIZERS_TEXT = f" ({ORGANIZERS})" if ORGANIZERS else ""
 
 # Если организаторов несколько (в ORGANIZERS есть запятая) — просим писать только одному
 ORGANIZERS_NOTE = (
-    "\n\nПожалуйста, обращайся только к одному организатору, чтобы не дублировать обращения. Мы постараемся ответить как можно быстрее."
+    "\n\nПожалуйста, не пиши всем организаторам сразу, а только одному. Они постараются ответить как можно быстрее."
     if "," in ORGANIZERS else ""
 )
 
@@ -71,45 +72,99 @@ async def is_group_member(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> b
         return False
 
 
+def build_copy_keyboard():
+    """Кнопка «Скопировать номер договора» под сообщением с реквизитами.
+
+    Нажатие копирует номер в буфер обмена прямо в Telegram, боту ничего не приходит.
+    Номер берётся из RECEIVER_CONTRACT (.env). Если он пуст — кнопки нет.
+    """
+    if not RECEIVER_CONTRACT:
+        return None
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("Скопировать номер договора", copy_text=CopyTextButton(text=RECEIVER_CONTRACT))
+    ]])
+
+
+def build_payment_text(price: int, reminder: bool = False) -> str:
+    """Собирает текст сообщения с реквизитами (HTML-разметка: жирный шрифт через <b>).
+
+    Всё, что приходит из .env, пропускаем через html.escape, чтобы символы < > & не ломали разметку.
+    Строки, значений для которых в .env нет, просто не показываются.
+    """
+    esc = html.escape
+    blocks = []
+
+    if reminder:
+        blocks.append(f"⏳ Ожидаю чек об оплате на сумму {price} ₽.")
+
+    blocks.append(f"💳 <b>Оплата — {price} ₽</b>")
+
+    if ACCOUNT_LINK:
+        blocks.append(f"🔗 <b>По ссылке:</b>\n{esc(ACCOUNT_LINK)}")
+
+    requisites = []
+    if RECEIVER_NAME:
+        requisites.append(f"Получатель: {esc(RECEIVER_NAME)}")
+    if RECEIVER_CONTRACT:
+        requisites.append(f"По договору № {esc(RECEIVER_CONTRACT)}")
+    if requisites:
+        blocks.append("🏦 <b>По реквизитам Т-Банка:</b>\n" + "\n".join(requisites))
+
+    blocks.append("📄 <b>После оплаты отправь сюда чек в формате PDF. Фото и скриншоты бот не принимает.</b>")
+
+    blocks.append("⚠️ <b>ВАЖНО!</b>\n<b>Бот автоматически распознаёт только чеки Т-Банка!</b>")
+
+    # Организаторы из .env (через запятую) выводим каждого с новой строки
+    organizers = [o.strip() for o in ORGANIZERS.split(",") if o.strip()]
+    if organizers:
+        blocks.append(
+            "Если оплачиваешь через другой банк, отправь чек одному из организаторов:\n\n"
+            + "\n".join(esc(o) for o in organizers)
+        )
+    else:
+        blocks.append("Если оплачиваешь через другой банк, свяжись с организаторами.")
+
+    blocks.append("Организатор вручную подтвердит оплату и добавит тебя в список гостей.")
+
+    if len(organizers) > 1:
+        blocks.append(
+            "🙏 <b>Пожалуйста, обращайся только к одному организатору, чтобы не дублировать запросы. "
+            "Мы постараемся ответить как можно быстрее!</b>"
+        )
+
+    blocks.append("🏀 Спасибо! До встречи на фестивале!")
+
+    return "\n\n".join(blocks)
+
+
 async def send_payment_info(update: Update, price: int, reminder: bool = False) -> None:
     """Отправляет реквизиты для оплаты: QR-картинку (если она есть) с текстом в подписи.
 
     reminder=False — первое сообщение после нажатия кнопки,
     reminder=True  — напоминание тем, кто нажал кнопку повторно.
     """
-    if reminder:
-        text = f"⏳ Для подтверждения регистрации необходимо внести оплату в размере {price} ₽.\n\n"
-    else:
-        text = ""
-    text += f"💳 Способы оплаты(сумма {price} ₽): \n\n По ссылке:\n {ACCOUNT_LINK}"
-    if PAYMENT_DETAILS:
-        text += f"\n{PAYMENT_DETAILS}"
-    text += (
-        "\n\n📌 Важно!"
-        f"\n\n⚠️ Бот автоматически распознаёт только чеки Т-Банка. Если ты пользуешься другим банком, можешь оплатить по ссылке выше и отправить чек одному из организаторов: {ORGANIZERS_TEXT}"
-        f"\nОрганизатор вручную подтвердит оплату и добавит тебя в список гостей.\n"
-        f"{ORGANIZERS_NOTE}\n\n"
-        "📄 Если оплачиваешь через Т-Банк, отправь чек прямо сюда в формате PDF. Фото или скриншот не подойдут.\n"
+    text = build_payment_text(price, reminder)
+    keyboard = build_copy_keyboard()
 
-        "Фотографии и скриншоты бот не принимает.\n\n"
+    # Подпись к фото в Telegram — не длиннее 1024 символов (считаются символы без HTML-тегов).
+    plain_len = len(html.unescape(re.sub(r"<[^>]+>", "", text)))
 
-        "Спасибо! 🏀"
-    )
-
-    # Если QR-файл задан и существует — шлём фото. Подпись к фото в Telegram — не длиннее 1024 символов.
+    # Если QR-файл задан и существует — шлём фото.
     if PAYMENT_QR_PATH and os.path.isfile(PAYMENT_QR_PATH):
         try:
             with open(PAYMENT_QR_PATH, "rb") as qr_file:
-                if len(text) <= 1024:
-                    await update.message.reply_photo(photo=qr_file, caption=text)
+                if plain_len <= 1024:
+                    await update.message.reply_photo(
+                        photo=qr_file, caption=text, parse_mode="HTML", reply_markup=keyboard
+                    )
                 else:
                     await update.message.reply_photo(photo=qr_file)
-                    await update.message.reply_text(text)
+                    await update.message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
             return
         except Exception as e:
             logger.error(f"Не удалось отправить QR-код ({PAYMENT_QR_PATH}): {e}")
 
-    await update.message.reply_text(text)
+    await update.message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
 
 
 async def start_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

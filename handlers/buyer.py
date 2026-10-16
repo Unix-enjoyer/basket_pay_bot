@@ -22,7 +22,7 @@ from telegram.ext import ContextTypes
 
 from config import (
     RECEIVER_CONTRACT, ACCOUNT_LINK, GROUP_CHAT_ID,
-    PAYMENT_QR_PATH, ORGANIZERS, RECEIVER_NAME,
+    PAYMENT_QR_PATH, ORGANIZERS, RECEIVER_NAME, PAYMENT_PHONE
 )
 from database import (
     get_current_price,
@@ -116,7 +116,17 @@ def build_payment_text(price: int, reminder: bool = False) -> str:
 
     # Организаторы из .env (через запятую) выводим каждого с новой строки
     organizers = [o.strip() for o in ORGANIZERS.split(",") if o.strip()]
-    if organizers:
+    if PAYMENT_PHONE:
+        phone_text = (
+            "📱 <b>Если оплачиваешь через другой банк, переведи по номеру телефона:</b>\n"
+            f"{esc(PAYMENT_PHONE)}\n"
+        )
+        if organizers:
+            phone_text += "Затем отправь чек одному из организаторов:\n\n" + "\n".join(esc(o) for o in organizers)
+        else:
+            phone_text += "Затем отправь чек организаторам."
+        blocks.append(phone_text)
+    elif organizers:
         blocks.append(
             "Если оплачиваешь через другой банк, отправь чек одному из организаторов:\n\n"
             + "\n".join(esc(o) for o in organizers)

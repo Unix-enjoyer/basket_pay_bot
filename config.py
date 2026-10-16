@@ -43,7 +43,7 @@ ACCOUNT_LINK = os.getenv("ACCOUNT_LINK", "(ссылка на счёт ещё н�
 # ФИО получателя перевода — показывается в сообщении с реквизитами («Получатель: ...»).
 # Если оставить пустым — строка «Получатель» не показывается.
 RECEIVER_NAME = os.getenv("RECEIVER_NAME", "").strip()
-
+PAYMENT_PHONE = os.getenv("PAYMENT_PHONE", "").strip()
 # Путь к картинке с QR-кодом для оплаты (необязательно), например assets/qr.jpg.
 # Если файла нет — бот просто отправит текст без картинки.
 PAYMENT_QR_PATH = os.getenv("PAYMENT_QR_PATH", "").strip()

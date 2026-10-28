@@ -99,6 +99,8 @@ def build_payment_text(price: int, reminder: bool = False) -> str:
 
     blocks.append(f"💳 <b>Оплата — {price} ₽</b>")
 
+    blocks.append(f"❤️ Хочешь дополнительно поддержать фестиваль? Можешь перевести больше {price} ₽. Будем благодарны за любую поддержку! 🏀")
+
     if ACCOUNT_LINK:
         blocks.append(f"🔗 <b>По ссылке:</b>\n{esc(ACCOUNT_LINK)}")
 

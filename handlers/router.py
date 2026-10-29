@@ -84,6 +84,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             if action == "broadcast_message":
                 await admin_handlers.handle_broadcast_answer(update, context)
                 return
+            if action == "price_notify_yn":
+                await admin_handlers.handle_price_notify_yn_answer(update, context, pending_action["temp_tag"])
+                return
 
     # --- 2. Незавершённая регистрация ---
     pending_purchase = get_pending_purchase(user.id)

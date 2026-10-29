@@ -320,6 +320,36 @@ def get_guests_with_user_id() -> list:
         return conn.execute("SELECT * FROM guests WHERE user_id IS NOT NULL").fetchall()
 
 
+def get_awaiting_receipt_user_ids(price_not: Optional[int] = None) -> list:
+    """
+    Люди, которые нажали «Зарегистрироваться», но не прислали чек (этап awaiting_receipt).
+    Если указан price_not — берём только тех, у кого закреплена другая цена
+    (то есть тех, кто начал регистрацию по старой цене).
+    """
+    with get_connection() as conn:
+        if price_not is None:
+            rows = conn.execute(
+                "SELECT user_id FROM pending_purchases WHERE stage = 'awaiting_receipt'"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT user_id FROM pending_purchases "
+                "WHERE stage = 'awaiting_receipt' AND (price_locked IS NULL OR price_locked != ?)",
+                (price_not,),
+            ).fetchall()
+    return [r["user_id"] for r in rows]
+
+
+def clear_awaiting_receipt(user_ids: list) -> None:
+    """Удаляет незавершённую регистрацию (этап «жду чек») у указанных людей."""
+    with get_connection() as conn:
+        for uid in user_ids:
+            conn.execute(
+                "DELETE FROM pending_purchases WHERE user_id = ? AND stage = 'awaiting_receipt'",
+                (uid,),
+            )
+
+
 # ==================== ВХОД НА ТУРНИР (чек-ин) ====================
 
 def check_in_guest(code: str, admin_id: int) -> Optional[dict]:

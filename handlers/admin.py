@@ -9,9 +9,12 @@
 """
 
 import asyncio
+import html
 
 from telegram import Update, MessageOriginUser, MessageOriginHiddenUser
 from telegram.ext import ContextTypes
+
+from config import ORGANIZERS
 
 from database import (
     is_admin,
@@ -20,6 +23,8 @@ from database import (
     set_price,
     get_all_guests,
     get_guests_with_user_id,
+    get_awaiting_receipt_user_ids,
+    clear_awaiting_receipt,
     remove_guest,
     add_guest,
     set_admin_pending_action,
@@ -68,6 +73,86 @@ async def handle_set_price_answer(update: Update, context: ContextTypes.DEFAULT_
     set_price(new_price, changed_by=update.effective_user.id)
     clear_admin_pending_action(update.effective_user.id)
     await update.message.reply_text(f"✅ Цена билета изменена: {new_price} ₽.")
+
+    # Есть ли люди, которые начали регистрацию по старой цене и не прислали чек?
+    waiting = get_awaiting_receipt_user_ids(price_not=new_price)
+    if not waiting:
+        return
+
+    set_admin_pending_action(update.effective_user.id, action="price_notify_yn", temp_tag=str(new_price))
+    await update.message.reply_text(
+        f"👥 Есть {len(waiting)} чел., которые начали регистрацию по старой цене и не прислали чек.\n\n"
+        "Отправить им сообщение о новой цене? Их старая регистрация закроется, "
+        "и им нужно будет нажать «Зарегистрироваться» заново.",
+        reply_markup=YES_NO_KEYBOARD,
+    )
+
+
+def build_price_changed_text(price: int) -> str:
+    """Сообщение людям, которые начали регистрацию по старой цене и не прислали чек."""
+    esc = html.escape
+    organizers = [o.strip() for o in ORGANIZERS.split(",") if o.strip()]
+
+    help_block = "По всем вопросам с оплатой обращайся к организаторам, и мы всё решим 🙏"
+    if organizers:
+        help_block += "\n" + "\n".join(esc(o) for o in organizers)
+
+    blocks = [
+        "🏀 Привет! Ты начинал(а) регистрацию на Баскет Фест, но не прислал чек.",
+        f"💰 Цена билета изменилась, теперь она составляет <b>{price} ₽</b>.\n"
+        "🔄 Прежняя регистрация закрыта, поэтому, пожалуйста, пройди её заново: "
+        "нажми кнопку «🎟 Зарегистрироваться», и я пришлю актуальные реквизиты.\n"
+        "✅ Если организаторы добавили тебя вручную, ничего делать не нужно, мы рады, что ты с нами!",
+        help_block,
+        "С нетерпением ждём тебя на Баскет Фесте! 🏀",
+    ]
+    return "\n\n".join(blocks)
+
+
+async def handle_price_notify_yn_answer(update: Update, context: ContextTypes.DEFAULT_TYPE, temp_tag: str) -> None:
+    """Ответ админа «Да / Нет» на вопрос: отправить ли сообщение о новой цене."""
+    text = update.message.text.strip()
+    admin_id = update.effective_user.id
+
+    if text == BTN_NO:
+        clear_admin_pending_action(admin_id)
+        await update.message.reply_text(
+            "👌 Хорошо, сообщения не отправлены. У тех, кто начал регистрацию раньше, остаётся старая цена.",
+            reply_markup=ADMIN_KEYBOARD,
+        )
+        return
+
+    if text != BTN_YES:
+        await update.message.reply_text("⚠️ Нажми кнопку «Да» или «Нет».", reply_markup=YES_NO_KEYBOARD)
+        return
+
+    clear_admin_pending_action(admin_id)
+    new_price = int(temp_tag)
+    # Список берём заново: за время диалога кто-то мог уже начать регистрацию по новой цене
+    # или прислать чек — таких людей не трогаем.
+    waiting = get_awaiting_receipt_user_ids(price_not=new_price)
+    message = build_price_changed_text(new_price)
+
+    sent = 0
+    failed = 0
+    for user_id in waiting:
+        try:
+            await context.bot.send_message(chat_id=user_id, text=message, parse_mode="HTML")
+            sent += 1
+        except Exception as e:
+            failed += 1
+            logger.warning(f"Не удалось отправить уведомление о цене user_id={user_id}: {e}")
+        await asyncio.sleep(0.05)
+
+    # Старую регистрацию закрываем у всех, даже если сообщение не дошло (например, бота заблокировали):
+    # при следующем нажатии «Зарегистрироваться» им закрепится новая цена.
+    clear_awaiting_receipt(waiting)
+    logger.info(f"Уведомление о новой цене {new_price}: отправлено {sent}, не доставлено {failed}")
+
+    report = f"✅ Готово. Сообщение о новой цене отправлено: {sent}."
+    if failed:
+        report += f"\n⚠️ Не доставлено: {failed} (возможно, заблокировали бота)."
+    await update.message.reply_text(report, reply_markup=ADMIN_KEYBOARD)
 
 
 # ==================== СПИСОК ОПЛАТИВШИХ ====================
